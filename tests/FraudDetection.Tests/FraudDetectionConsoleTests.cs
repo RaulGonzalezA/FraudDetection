@@ -127,6 +127,31 @@ public sealed class FraudDetectionConsoleTests
         result.Error.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Detects_interleaved_orders_by_email_and_address_regardless_of_input_order(bool reverseOrder)
+    {
+        string[] orders =
+        [
+            "20,7,bugs@bunny.com,12 Elm Street,Chicago,IL,01234,001",
+            "31,7,other@example.test,99 Maple Road,Chicago,IL,01234,007",
+            "40,8,roadrunner@example.test,15 Sesame St.,New York,NY,10011,003",
+            "11,7,bu.gs+promo@BUNNY.COM,22 Oak Road,Chicago,IL,01234,002",
+            "45,8,visitor@example.test,18 Maple Street,New York,NY,10011,008",
+            "2,8,coyote@example.test,15 Sesame Street,NEW YORK,New York,10011,004"
+        ];
+
+        if (reverseOrder)
+        {
+            Array.Reverse(orders);
+        }
+
+        var result = Run($"{orders.Length}\n{string.Join('\n', orders)}");
+
+        result.Should().Be((0, "2,11,20,40\n", string.Empty));
+    }
+
     [Fact]
     public void Reads_large_numeric_ids_and_preserves_the_text_of_card_numbers()
     {

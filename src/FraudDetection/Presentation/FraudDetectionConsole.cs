@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using FraudDetection.Application;
 using FraudDetection.Infrastructure;
 using Serilog;
@@ -10,6 +11,14 @@ namespace FraudDetection.Presentation;
 
 public static class FraudDetectionConsole
 {
+    internal static int RunWithExecutionLog(Stream input, TextWriter output, TextWriter error, string logDirectory)
+    {
+        // Match the optional UTF-8 preamble while keeping the strict UTF-8 decoder.
+        var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true, throwOnInvalidBytes: true);
+        using var reader = new StreamReader(input, encoding, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+        return RunWithExecutionLog(reader, output, error, logDirectory);
+    }
+
     internal static int RunWithExecutionLog(TextReader input, TextWriter output, TextWriter error, string logDirectory)
     {
         using var logFile = TryOpenExecutionLog(logDirectory);
@@ -62,13 +71,28 @@ public static class FraudDetectionConsole
             logger.Error("{Diagnostic:l}", exception.Message);
             return 1;
         }
+        catch (DecoderFallbackException)
+        {
+            logger.Error("Input is not valid UTF-8.");
+            return 1;
+        }
         catch (IOException)
         {
             logger.Error("Could not read the input.");
             return 1;
         }
 
-        FraudResultWriter.Write(fraudulentIds, output);
+        try
+        {
+            FraudResultWriter.Write(fraudulentIds, output);
+            output.Flush();
+        }
+        catch (IOException)
+        {
+            logger.Error("Could not write the result.");
+            return 1;
+        }
+
         return 0;
     }
 

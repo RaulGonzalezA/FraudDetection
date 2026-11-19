@@ -1,3 +1,4 @@
 using FraudDetection.Presentation;
 
-return FraudDetectionConsole.RunWithExecutionLog(Console.In, Console.Out, Console.Error, "logs");
+using var input = Console.OpenStandardInput();
+return FraudDetectionConsole.RunWithExecutionLog(input, Console.Out, Console.Error, "logs");

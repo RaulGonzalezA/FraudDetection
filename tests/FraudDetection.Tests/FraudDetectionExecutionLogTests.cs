@@ -1,3 +1,4 @@
+using System.Text;
 using FluentAssertions;
 using FraudDetection.Presentation;
 using Xunit;
@@ -61,6 +62,60 @@ public sealed class FraudDetectionExecutionLogTests
             .And.NotContain("test-card-data");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Reads_utf8_orders_with_or_without_a_bom(bool includeBom)
+    {
+        using var folder = new TemporaryLogDirectory();
+        const string orders = "2\n"
+            + "1,7,\u03A3@example.test,12 Elm Street,Chicago,IL,01234,001\n"
+            + "2,7,\u03C2@example.test,18 Oak Road,Chicago,IL,01234,002\n";
+        var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: includeBom);
+        using var input = new MemoryStream([..encoding.GetPreamble(), ..encoding.GetBytes(orders)]);
+        using var output = new StringWriter { NewLine = "\n" };
+        using var error = new StringWriter { NewLine = "\n" };
+
+        var exitCode = FraudDetectionConsole.RunWithExecutionLog(input, output, error, folder.Path);
+
+        (exitCode, output.ToString(), error.ToString()).Should().Be((0, "1,2\n", string.Empty));
+    }
+
+    [Fact]
+    public void Reports_invalid_utf8_even_after_a_valid_bom()
+    {
+        using var folder = new TemporaryLogDirectory();
+        using var input = new MemoryStream([0xEF, 0xBB, 0xBF, 0xFF]);
+        using var output = new StringWriter();
+        using var error = new StringWriter { NewLine = "\n" };
+
+        var exitCode = FraudDetectionConsole.RunWithExecutionLog(input, output, error, folder.Path);
+
+        (exitCode, output.ToString(), error.ToString()).Should().Be((1, string.Empty, "Input is not valid UTF-8.\n"));
+        ReadSingleLog(folder.Path).Should()
+            .Contain(" ERR] Input is not valid UTF-8.")
+            .And.Contain(" INF] Fraud detection finished with exit code 1.");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Records_output_io_failures_during_write_or_flush(bool failOnFlush)
+    {
+        using var folder = new TemporaryLogDirectory();
+        using var input = new StringReader("0");
+        using var output = new FailingOutput(failOnFlush);
+        using var error = new StringWriter { NewLine = "\n" };
+
+        var exitCode = FraudDetectionConsole.RunWithExecutionLog(input, output, error, folder.Path);
+
+        exitCode.Should().Be(1);
+        error.ToString().Should().Be("Could not write the result.\n");
+        ReadSingleLog(folder.Path).Should()
+            .Contain(" ERR] Could not write the result.")
+            .And.Contain(" INF] Fraud detection finished with exit code 1.");
+    }
+
     [Fact]
     public void Reports_an_unavailable_log_directory_and_keeps_processing()
     {
@@ -88,6 +143,27 @@ public sealed class FraudDetectionExecutionLogTests
         var exitCode = FraudDetectionConsole.RunWithExecutionLog(input, output, error, logDirectory);
 
         return (exitCode, output.ToString(), error.ToString());
+    }
+
+    private sealed class FailingOutput(bool failOnFlush) : TextWriter
+    {
+        public override Encoding Encoding => Encoding.UTF8;
+
+        public override void WriteLine(string? value)
+        {
+            if (!failOnFlush)
+            {
+                throw new IOException("Synthetic write failure.");
+            }
+        }
+
+        public override void Flush()
+        {
+            if (failOnFlush)
+            {
+                throw new IOException("Synthetic flush failure.");
+            }
+        }
     }
 
     private sealed class TemporaryLogDirectory : IDisposable
