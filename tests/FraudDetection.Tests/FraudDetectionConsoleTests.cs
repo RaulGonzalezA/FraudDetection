@@ -2,6 +2,9 @@ using FluentAssertions;
 using FraudDetection.Application;
 using FraudDetection.Domain;
 using FraudDetection.Presentation;
+using Serilog;
+using Serilog.Core;
+using Serilog.Events;
 using Xunit;
 
 namespace FraudDetection.Tests;
@@ -36,6 +39,75 @@ public sealed class FraudDetectionConsoleTests
         result.ExitCode.Should().Be(0);
         result.Output.Should().Be("1,2\n");
         result.Error.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Processes_extra_orders_and_reports_the_actual_count(int declaredCount)
+    {
+        var result = Run($"{declaredCount}\n{FirstOrder}\n{SecondOrder}");
+
+        result.ExitCode.Should().Be(0);
+        result.Output.Should().Be("1,2\n");
+        result.Error.Should().Be($"Warning: declared order count was {declaredCount}, but processed count was 2.\n");
+    }
+
+    [Fact]
+    public void Logs_extra_orders_as_a_warning_with_both_counts()
+    {
+        using var input = new StringReader($"1\n{FirstOrder}\n{SecondOrder}");
+
+        var log = CaptureDiagnostics(input).Should().ContainSingle().Which;
+
+        log.Level.Should().Be(LogEventLevel.Warning);
+        log.Properties["DeclaredCount"].Should().BeOfType<ScalarValue>().Which.Value.Should().Be(1);
+        log.Properties["ProcessedCount"].Should().BeOfType<ScalarValue>().Which.Value.Should().Be(2L);
+    }
+
+    [Fact]
+    public void Logs_invalid_input_as_an_error_with_the_public_diagnostic()
+    {
+        using var input = new StringReader("1");
+
+        var log = CaptureDiagnostics(input).Should().ContainSingle().Which;
+
+        log.Level.Should().Be(LogEventLevel.Error);
+        log.Properties["Diagnostic"].Should().BeOfType<ScalarValue>().Which.Value
+            .Should().Be("Line 2: expected an order record.");
+    }
+
+    [Fact]
+    public void Logs_an_input_io_failure_with_a_generic_message()
+    {
+        using var input = new UnreadableInput();
+
+        var log = CaptureDiagnostics(input).Should().ContainSingle().Which;
+
+        log.Level.Should().Be(LogEventLevel.Error);
+        log.RenderMessage().Should().Be("Could not read the input.");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Rejects_a_duplicate_id_in_a_declared_or_additional_record(int declaredCount)
+    {
+        var result = Run($"{declaredCount}\n{FirstOrder}\n0{FirstOrder}");
+
+        result.ExitCode.Should().Be(1);
+        result.Output.Should().BeEmpty();
+        result.Error.Should().Be("Order record 2: duplicate order ID 1.\n");
+    }
+
+    [Fact]
+    public void Validates_an_additional_record_before_writing_results()
+    {
+        var result = Run($"1\n{FirstOrder}\n2,1,bu gs@example.test,12 Elm Street,Chicago,IL,01234,101");
+
+        result.ExitCode.Should().Be(1);
+        result.Output.Should().BeEmpty();
+        result.Error.Should().Be("Line 3: invalid email address.\n");
     }
 
     [Fact]
@@ -119,6 +191,28 @@ public sealed class FraudDetectionConsoleTests
         var exitCode = FraudDetectionConsole.Run(input, output, error);
 
         return (exitCode, output.ToString(), error.ToString());
+    }
+
+    private static IReadOnlyList<LogEvent> CaptureDiagnostics(TextReader input)
+    {
+        var sink = new DiagnosticEvents();
+        using var logger = new LoggerConfiguration().WriteTo.Sink(sink).CreateLogger();
+
+        FraudDetectionConsole.Run(input, TextWriter.Null, logger);
+
+        return sink.Events;
+    }
+
+    private sealed class DiagnosticEvents : ILogEventSink
+    {
+        public List<LogEvent> Events { get; } = [];
+
+        public void Emit(LogEvent logEvent) => Events.Add(logEvent);
+    }
+
+    private sealed class UnreadableInput : TextReader
+    {
+        public override string? ReadLine() => throw new IOException("Internal read details.");
     }
 
     private sealed class InMemoryOrderSource(Order[] orders) : IOrderSource

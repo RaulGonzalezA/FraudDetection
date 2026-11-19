@@ -1,3 +1,3 @@
 using FraudDetection.Presentation;
 
-return FraudDetectionConsole.Run(Console.In, Console.Out, Console.Error);
+return FraudDetectionConsole.RunWithExecutionLog(Console.In, Console.Out, Console.Error, "logs");

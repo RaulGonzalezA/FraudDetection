@@ -68,6 +68,22 @@ public sealed class FraudDetectorTests
     }
 
     [Theory]
+    [InlineData(1L)]
+    [InlineData(2L)]
+    public void Rejects_a_repeat_order_id_even_across_deals(long secondDealId)
+    {
+        var orders = new[]
+        {
+            CreateOrder(9, dealId: 1, email: "bugs@bunny.com", card: "101"),
+            CreateOrder(9, dealId: secondDealId, email: "bugs@bunny.com", card: "202")
+        };
+        Action detect = () => FraudDetector.FindFraudulentOrderIds(orders);
+
+        detect.Should().Throw<FormatException>()
+            .Which.Message.Should().Be("Order record 2: duplicate order ID 9.");
+    }
+
+    [Theory]
     [InlineData("bugs@bunny.com", "BuGS@BuNNy.COM")]
     [InlineData("bugs1@bunny.com", "bugs.1@bunny.com")]
     [InlineData("bugs@bunny.com", "bugs+10@bunny.com")]

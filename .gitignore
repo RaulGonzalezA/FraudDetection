@@ -11,6 +11,7 @@
 /.nuget/
 *.nupkg
 *.snupkg
+logs/
 
 # Local preparation for the technical test
 /.codex/

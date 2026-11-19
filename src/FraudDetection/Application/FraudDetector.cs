@@ -40,9 +40,15 @@ public sealed class FraudDetector(IIdentityNormalizer normalizer) : IFraudDetect
         var emailGroups = new Dictionary<(long DealId, string Email), OrderGroup>(EmailKeyComparer);
         var addressGroups = new Dictionary<(long DealId, OrderAddress Address), OrderGroup>(AddressKeyComparer);
         var fraudulentIds = new HashSet<long>();
+        var seenOrderIds = new HashSet<long>();
 
         foreach (var order in orders)
         {
+            if (!seenOrderIds.Add(order.Id))
+            {
+                throw new FormatException($"Order record {seenOrderIds.Count + 1L}: duplicate order ID {order.Id}.");
+            }
+
             var email = normalizer.NormalizeEmail(order.Email);
             var address = normalizer.NormalizeAddress(order.Address);
             TrackOrder(emailGroups, (order.DealId, email), order, fraudulentIds);

@@ -25,7 +25,11 @@ public sealed class OrderInputValidatorTests
     [InlineData("@example.test")]
     [InlineData("customer@")]
     [InlineData("customer@@example.test")]
-    public void Rejects_an_email_with_an_invalid_separator(string email)
+    [InlineData("bu gs@example.test")]
+    [InlineData("customer@exam ple.test")]
+    [InlineData("customer@example.\ttest")]
+    [InlineData("bu\u00a0gs@example.test")]
+    public void Rejects_a_malformed_email(string email)
     {
         var result = _validator.Validate(ValidOrder with { Email = email });
 

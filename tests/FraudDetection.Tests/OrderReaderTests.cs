@@ -32,6 +32,14 @@ public sealed class OrderReaderTests
         ReadOrders("0").Should().BeEmpty();
     }
 
+    [Fact]
+    public void Reads_all_valid_records_when_more_orders_arrive_than_declared()
+    {
+        var orders = ReadOrders($"1\n{ValidOrder}\n10,2,elmer@example.test,18 Oak Road,Boston,MA,02108,1");
+
+        orders.Select(order => order.Id).Should().Equal(9L, 10L);
+    }
+
     [Theory]
     [InlineData("", HeaderError)]
     [InlineData("-1", HeaderError)]

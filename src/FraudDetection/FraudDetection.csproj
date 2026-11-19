@@ -5,6 +5,8 @@
 
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Sinks.TextWriter" />
   </ItemGroup>
 
   <ItemGroup>

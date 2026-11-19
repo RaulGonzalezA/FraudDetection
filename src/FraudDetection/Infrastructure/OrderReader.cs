@@ -4,26 +4,35 @@ using FraudDetection.Domain;
 
 namespace FraudDetection.Infrastructure;
 
-internal sealed class OrderReader(TextReader input) : IOrderSource
+internal sealed class OrderReader(TextReader input, Action<int, long>? reportExtraOrders = null) : IOrderSource
 {
     private const int FieldCount = 8;
     private static readonly OrderInputValidator InputValidator = new();
 
     public IEnumerable<Order> Read()
     {
-        if (!int.TryParse(input.ReadLine(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var count)
-            || count < 0)
+        if (!int.TryParse(input.ReadLine(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var declaredCount)
+            || declaredCount < 0)
         {
             throw new FormatException("Line 1: expected a non-negative order count.");
         }
 
-        for (var index = 0; index < count; index++)
+        var processedCount = 0L;
+        while (input.ReadLine() is { } line)
         {
-            var lineNumber = index + 2L;
-            var line = input.ReadLine()
-                ?? throw new FormatException($"Line {lineNumber}: expected an order record.");
+            var order = ReadOrder(line, processedCount + 2);
+            processedCount++;
+            yield return order;
+        }
 
-            yield return ReadOrder(line, lineNumber);
+        if (processedCount < declaredCount)
+        {
+            throw new FormatException($"Line {processedCount + 2}: expected an order record.");
+        }
+
+        if (processedCount > declaredCount)
+        {
+            reportExtraOrders?.Invoke(declaredCount, processedCount);
         }
     }
 

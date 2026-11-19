@@ -10,6 +10,14 @@ internal static class EmailAddress
             return -1;
         }
 
+        foreach (var character in email)
+        {
+            if (char.IsWhiteSpace(character))
+            {
+                return -1;
+            }
+        }
+
         return separator;
     }
 }
