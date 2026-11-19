@@ -5,12 +5,15 @@ namespace FraudDetection.Presentation;
 
 public static class FraudDetectionConsole
 {
-    public static int Run(TextReader input, TextWriter output, TextWriter error)
+    public static int Run(TextReader input, TextWriter output, TextWriter error) =>
+        Run(new OrderReader(input), FraudDetector.Default, output, error);
+
+    public static int Run(IOrderSource source, IFraudDetector detector, TextWriter output, TextWriter error)
     {
         IReadOnlySet<long> fraudulentIds;
         try
         {
-            fraudulentIds = FraudDetector.FindFraudulentOrderIds(OrderReader.Read(input));
+            fraudulentIds = detector.Detect(source.Read());
         }
         catch (FormatException exception)
         {

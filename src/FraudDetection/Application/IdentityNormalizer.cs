@@ -3,12 +3,19 @@ using FraudDetection.Domain;
 
 namespace FraudDetection.Application;
 
-internal static partial class IdentityNormalizer
+internal sealed partial class IdentityNormalizer : IIdentityNormalizer
 {
-    public static string NormalizeEmail(string email)
+    private static readonly Dictionary<string, string> StateAbbreviations = new(StringComparer.OrdinalIgnoreCase)
     {
-        var separator = email.IndexOf('@');
-        if (separator <= 0 || separator == email.Length - 1 || email.AsSpan(separator + 1).Contains('@'))
+        ["illinois"] = "il",
+        ["california"] = "ca",
+        ["new york"] = "ny"
+    };
+
+    public string NormalizeEmail(string email)
+    {
+        var separator = EmailAddress.FindSeparator(email);
+        if (separator < 0)
         {
             throw new FormatException("Invalid email address.");
         }
@@ -17,7 +24,7 @@ internal static partial class IdentityNormalizer
         var plusIndex = localPart.IndexOf('+');
         if (plusIndex < 0 && !localPart.Contains('.'))
         {
-            return email.ToLowerInvariant();
+            return email;
         }
 
         if (plusIndex >= 0)
@@ -26,31 +33,18 @@ internal static partial class IdentityNormalizer
         }
 
         var normalizedLocalPart = localPart.ToString().Replace(".", string.Empty, StringComparison.Ordinal);
-        return string.Concat(normalizedLocalPart.AsSpan(), email.AsSpan(separator)).ToLowerInvariant();
+        return string.Concat(normalizedLocalPart.AsSpan(), email.AsSpan(separator));
     }
 
-    public static OrderAddress NormalizeAddress(OrderAddress address) =>
+    public OrderAddress NormalizeAddress(OrderAddress address) =>
         address with
         {
             Street = StreetAbbreviations().Replace(
-                address.Street.ToLowerInvariant(),
-                static match => match.Value == "st." ? "street" : "road"),
-            City = address.City.ToLowerInvariant(),
-            State = NormalizeState(address.State)
+                address.Street,
+                static match => match.Value.Equals("st.", StringComparison.OrdinalIgnoreCase) ? "street" : "road"),
+            State = StateAbbreviations.GetValueOrDefault(address.State, address.State)
         };
 
-    private static string NormalizeState(string state)
-    {
-        var normalized = state.ToLowerInvariant();
-        return normalized switch
-        {
-            "illinois" => "il",
-            "california" => "ca",
-            "new york" => "ny",
-            _ => normalized
-        };
-    }
-
-    [GeneratedRegex(@"(?<!\S)(?:st\.|rd\.)(?!\S)")]
+    [GeneratedRegex(@"(?<!\S)(?:st\.|rd\.)(?!\S)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex StreetAbbreviations();
 }

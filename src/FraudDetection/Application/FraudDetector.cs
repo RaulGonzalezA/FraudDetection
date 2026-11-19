@@ -2,18 +2,49 @@ using FraudDetection.Domain;
 
 namespace FraudDetection.Application;
 
-public static class FraudDetector
+public sealed class FraudDetector(IIdentityNormalizer normalizer) : IFraudDetector
 {
-    public static IReadOnlySet<long> FindFraudulentOrderIds(IEnumerable<Order> orders)
+    private static readonly StringComparer IdentityTextComparer = StringComparer.OrdinalIgnoreCase;
+
+    private static readonly IEqualityComparer<(long DealId, string Email)> EmailKeyComparer =
+        EqualityComparer<(long DealId, string Email)>.Create(
+            static (left, right) => left.DealId == right.DealId
+                && IdentityTextComparer.Equals(left.Email, right.Email),
+            static key => HashCode.Combine(key.DealId, IdentityTextComparer.GetHashCode(key.Email)));
+
+    private static readonly IEqualityComparer<(long DealId, OrderAddress Address)> AddressKeyComparer =
+        EqualityComparer<(long DealId, OrderAddress Address)>.Create(
+            static (left, right) => left.DealId == right.DealId
+                && IdentityTextComparer.Equals(left.Address.Street, right.Address.Street)
+                && IdentityTextComparer.Equals(left.Address.City, right.Address.City)
+                && IdentityTextComparer.Equals(left.Address.State, right.Address.State)
+                && StringComparer.Ordinal.Equals(left.Address.ZipCode, right.Address.ZipCode),
+            static key =>
+            {
+                var hash = new HashCode();
+                hash.Add(key.DealId);
+                hash.Add(key.Address.Street, IdentityTextComparer);
+                hash.Add(key.Address.City, IdentityTextComparer);
+                hash.Add(key.Address.State, IdentityTextComparer);
+                hash.Add(key.Address.ZipCode, StringComparer.Ordinal);
+
+                return hash.ToHashCode();
+            });
+
+    internal static IFraudDetector Default { get; } = new FraudDetector(new IdentityNormalizer());
+
+    public static IReadOnlySet<long> FindFraudulentOrderIds(IEnumerable<Order> orders) => Default.Detect(orders);
+
+    public IReadOnlySet<long> Detect(IEnumerable<Order> orders)
     {
-        var emailGroups = new Dictionary<(long DealId, string Email), OrderGroup>();
-        var addressGroups = new Dictionary<(long DealId, OrderAddress Address), OrderGroup>();
+        var emailGroups = new Dictionary<(long DealId, string Email), OrderGroup>(EmailKeyComparer);
+        var addressGroups = new Dictionary<(long DealId, OrderAddress Address), OrderGroup>(AddressKeyComparer);
         var fraudulentIds = new HashSet<long>();
 
         foreach (var order in orders)
         {
-            var email = IdentityNormalizer.NormalizeEmail(order.Email);
-            var address = IdentityNormalizer.NormalizeAddress(order.Address);
+            var email = normalizer.NormalizeEmail(order.Email);
+            var address = normalizer.NormalizeAddress(order.Address);
             TrackOrder(emailGroups, (order.DealId, email), order, fraudulentIds);
             TrackOrder(addressGroups, (order.DealId, address), order, fraudulentIds);
         }

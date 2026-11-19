@@ -2,4 +2,12 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FraudDetection.Tests" />
+  </ItemGroup>
 </Project>

@@ -24,6 +24,15 @@ public sealed class FraudDetectorTests
     }
 
     [Fact]
+    public void Uses_the_supplied_identity_normalizer()
+    {
+        IFraudDetector detector = new FraudDetector(new SharedEmailNormalizer());
+        var orders = new[] { CreateOrder(1, card: "101"), CreateOrder(2, card: "202") };
+
+        detector.Detect(orders).Should().BeEquivalentTo(new long[] { 1, 2 });
+    }
+
+    [Fact]
     public void Finds_both_orders_when_address_and_deal_match_but_cards_and_emails_differ()
     {
         var orders = new[]
@@ -63,6 +72,7 @@ public sealed class FraudDetectorTests
     [InlineData("bugs1@bunny.com", "bugs.1@bunny.com")]
     [InlineData("bugs@bunny.com", "bugs+10@bunny.com")]
     [InlineData("bugs1@bunny.com", "b.u.gs.1+campaign.code@BUNNY.COM")]
+    [InlineData("\u03A3@example.test", "\u03C2@example.test")]
     public void Matches_supported_email_variants(string firstEmail, string secondEmail)
     {
         var orders = new[]
@@ -91,6 +101,7 @@ public sealed class FraudDetectorTests
     [InlineData("12 Elm St.", "Chicago", "Illinois", "12 Elm Street", "Chicago", "IL")]
     [InlineData("12 Elm Rd.", "San Francisco", "CA", "12 Elm Road", "San Francisco", "California")]
     [InlineData("12 Elm Road", "New York", "New York", "12 ELM ROAD", "NEW YORK", "NY")]
+    [InlineData("12 Elm Street", "\u03A3", "IL", "12 Elm Street", "\u03C2", "IL")]
     public void Matches_supported_address_variants(
         string firstStreet,
         string firstCity,
@@ -161,6 +172,19 @@ public sealed class FraudDetectorTests
     }
 
     [Fact]
+    public void Does_not_propagate_fraud_to_a_related_group_with_one_card()
+    {
+        var orders = new[]
+        {
+            CreateOrder(1, email: "bugs@bunny.com", card: "101"),
+            CreateOrder(2, email: "bugs@bunny.com", address: SharedAddress, card: "202"),
+            CreateOrder(3, address: SharedAddress, card: "202")
+        };
+
+        FraudDetector.FindFraudulentOrderIds(orders).Should().BeEquivalentTo(new long[] { 1, 2 });
+    }
+
+    [Fact]
     public void Preserves_leading_zeroes_when_comparing_card_numbers()
     {
         var orders = new[]
@@ -187,4 +211,11 @@ public sealed class FraudDetectorTests
         string card = "101") =>
         new(id, dealId, email ?? $"customer{id}@example.test",
             address ?? new OrderAddress($"{id} Elm Street", "Chicago", "IL", "01234"), card);
+
+    private sealed class SharedEmailNormalizer : IIdentityNormalizer
+    {
+        public string NormalizeEmail(string email) => "shared@example.test";
+
+        public OrderAddress NormalizeAddress(OrderAddress address) => address;
+    }
 }

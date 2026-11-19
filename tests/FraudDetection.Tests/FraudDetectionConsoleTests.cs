@@ -1,4 +1,6 @@
 using FluentAssertions;
+using FraudDetection.Application;
+using FraudDetection.Domain;
 using FraudDetection.Presentation;
 using Xunit;
 
@@ -9,6 +11,22 @@ public sealed class FraudDetectionConsoleTests
     private const string FirstOrder = "1,1,bugs@bunny.com,123 Sesame St.,New York,NY,10011,12345689010";
     private const string SecondOrder = "2,1,elmer@fudd.com,123 Sesame St.,New York,NY,10011,10987654321";
     private const string ThirdOrder = "3,2,bugs@bunny.com,123 Sesame St.,New York,NY,10011,12345689010";
+
+    [Fact]
+    public void Uses_the_supplied_order_source_and_detector()
+    {
+        IOrderSource source = new InMemoryOrderSource(
+            [new Order(9, 1, "bugs@example.test", new OrderAddress("12 Elm Street", "Chicago", "IL", "01234"), "001")]);
+        IFraudDetector detector = new AllSourceIdsDetector();
+        using var output = new StringWriter { NewLine = "\n" };
+        using var error = new StringWriter();
+
+        var exitCode = FraudDetectionConsole.Run(source, detector, output, error);
+
+        exitCode.Should().Be(0);
+        output.ToString().Should().Be("9\n");
+        error.ToString().Should().BeEmpty();
+    }
 
     [Fact]
     public void Writes_the_expected_result_for_the_assignment_sample()
@@ -82,6 +100,16 @@ public sealed class FraudDetectionConsoleTests
         result.Error.Should().NotBeNullOrWhiteSpace().And.NotContain("private-note");
     }
 
+    [Fact]
+    public void Reports_the_line_number_of_an_invalid_email_without_exposing_it()
+    {
+        var result = Run($"2\n{FirstOrder}\n2,1,invalid-email,12 Elm Street,Chicago,IL,01234,101");
+
+        result.ExitCode.Should().Be(1);
+        result.Output.Should().BeEmpty();
+        result.Error.Should().Be("Line 3: invalid email address.\n");
+    }
+
     private static (int ExitCode, string Output, string Error) Run(string text)
     {
         using var input = new StringReader(text);
@@ -91,5 +119,16 @@ public sealed class FraudDetectionConsoleTests
         var exitCode = FraudDetectionConsole.Run(input, output, error);
 
         return (exitCode, output.ToString(), error.ToString());
+    }
+
+    private sealed class InMemoryOrderSource(Order[] orders) : IOrderSource
+    {
+        public IEnumerable<Order> Read() => orders;
+    }
+
+    private sealed class AllSourceIdsDetector : IFraudDetector
+    {
+        public IReadOnlySet<long> Detect(IEnumerable<Order> orders) =>
+            orders.Select(order => order.Id).ToHashSet();
     }
 }
